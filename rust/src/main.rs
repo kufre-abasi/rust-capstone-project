@@ -1,11 +1,16 @@
 #![allow(unused)]
-use bitcoin::hex::DisplayHex;
-use bitcoincore_rpc::bitcoin::Amount;
-use bitcoincore_rpc::{Auth, Client, RpcApi};
+// use bitcoin::hex::DisplayHex;
+// use bitcoincore_rpc::bitcoin::{Amount, Address};
+use bitcoincore_rpc::{
+    bitcoin::{Amount, Address, Network},
+     Auth, Client, RpcApi
+    };
 use serde::Deserialize;
 use serde_json::json;
 use std::fs::File;
 use std::io::Write;
+// use bitcoin::Address;
+
 
 // Node access params
 const RPC_URL: &str = "http://127.0.0.1:18443"; // Default regtest RPC port
@@ -51,13 +56,13 @@ fn create_or_load_wallet(
         Ok(_) => {
             println!("Wallet {} created.", wallet_name)
         } Err(e)=>{
-            println!("{:?}", e)
+            println!("{:?}", e);
              rpc.call::<serde_json::Value>(
             "loadwallet",
             &[
                 json!(wallet_name)
             ],
-            );
+            )?;
             println!("Loaded wallet '{}'", wallet_name);
         }
     };  
@@ -76,7 +81,7 @@ fn mine_until_spendable_balance(
         blocks_mined += 1;
         miner_rpc.generate_to_address(1, mining_address)?;
 
-        current_balance = miner_rpc.get_balances(None, None)?;
+        current_balance = miner_rpc.get_balance(None, None)?;
 
         println!("Mined {} blocks, current balance: {}", blocks_mined, current_balance);
     }
@@ -85,10 +90,10 @@ fn mine_until_spendable_balance(
         blocks_mined
     );
     println!("Mining completed. Final balance: {}", current_balance);
-    println!("Spendable balances: {}", current_balance.spendable);
-    println!("immature balances: {}", current_balance.immature);
-    println!("trusted balances: {}", current_balance.trusted);
-    println!("untrusted balances: {}", current_balance.untrusted);
+    // println!("Spendable balances: {}", current_balance.spendable);
+    // println!("immature balances: {}", current_balance.immature);
+    // println!("trusted balances: {}", current_balance.trusted);
+    // println!("untrusted balances: {}", current_balance.untrusted);
 
     Ok(current_balance)
 }
@@ -121,7 +126,7 @@ fn main() -> bitcoincore_rpc::Result<()> {
     let mining_address = miner_rpc.get_new_address(
         Some("Mining Reward"), 
         None,
-    )?;
+    )?.require_network(Network::Regtest).unwrap();
     println!("Mining Address: {}", mining_address);
 
     let miner_balance = mine_until_spendable_balance(&miner_rpc, &mining_address)?;
@@ -138,12 +143,12 @@ fn main() -> bitcoincore_rpc::Result<()> {
     let trader_address = trader_rpc.get_new_address(
         Some("Received"), 
         None, 
-    )?;
+    )?.require_network(Network::Regtest).unwrap();
     println!("Trader Address: {}", trader_address);
     
 
     // Send 20 BTC from Miner to Trader
-    let txid = send(&miner_rpc, &trader_address, 20.0)?;
+    let txid = send(&miner_rpc, &trader_address.to_string(), 20.0)?;
     println!("Transaction ID: {}", txid);
     
  
@@ -151,14 +156,49 @@ fn main() -> bitcoincore_rpc::Result<()> {
     let mempool_entry = rpc.call::<serde_json::Value>(
         "getmempoolentry",
         &[json!(txid)]
-    )?
-    println!("Mempool entry: {}", mempool_entry);
+    )?;
+    println!("Mempool entry: {:?}", mempool_entry);
 
     // Mine 1 block to confirm the transaction 
+    let blockhash = rpc.generate_to_address(1, &mining_address)?;
+    println!("Blockhash: {:?}", blockhash);
 
     // Extract all required transaction details
+    let tx = rpc.call::<serde_json::Value>(
+        "gettransaction",
+        &[json!(txid), json!(null)]
+    )?;
+    let rawtx = rpc.call::<serde_json::Value>(
+        "getrawtransaction",
+        &[json!(txid), json!(1)]
+    )?;
+    println!("Transaction: {:#?}", tx);
+    println!("Raw Transaction: {:#?}", rawtx);
 
     // Write the data to ../out.txt in the specified format given in readme.md
+    let transaction_data = miner_rpc.call::<serde_json::Value>(
+        "gettransaction",
+        &[json!(txid), json!(null)]
+    )?;
+
+    let raw_transaction = miner_rpc.call::<serde_json::Value>(
+        "getrawtransaction",
+        &[json!(txid), json!(1)]
+    )?;
+
+    let output_file = File::create("../out.txt")?;
+    let mut writer = std::io::BufWriter::new(output_file);
+    writeln!(
+        writer,
+        "Transaction Data: {:#?}",
+        transaction_data
+    )?;
+    writeln!(
+        writer,
+        "Raw Transaction: {:#?}",
+        raw_transaction
+    )?;
+
 
     Ok(())
 }
