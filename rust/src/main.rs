@@ -145,7 +145,8 @@ fn main() -> bitcoincore_rpc::Result<()> {
 
     // Extract all required transaction details
     let tx = miner_rpc.call::<serde_json::Value>("gettransaction", &[json!(txid), json!(null)])?;
-    let rawtx = miner_rpc.call::<serde_json::Value>("getrawtransaction", &[json!(txid), json!(1)])?;
+    let rawtx =
+        miner_rpc.call::<serde_json::Value>("getrawtransaction", &[json!(txid), json!(1)])?;
     println!("Transaction: {:#?}", tx);
     println!("Raw Transaction: {:#?}", rawtx);
 
