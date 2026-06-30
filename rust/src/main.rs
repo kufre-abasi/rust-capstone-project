@@ -169,12 +169,11 @@ fn main() -> bitcoincore_rpc::Result<()> {
     let vin_txid = vin["txid"].as_str().unwrap();
     let vin_vout = vin["vout"].as_u64().unwrap();
 
-    let input_rawtx = miner_rpc.call::<serde_json::Value>(
-        "getrawtransaction",
-        &[json!(vin_txid), json!(1)]
-    )?;
+    let input_rawtx =
+        miner_rpc.call::<serde_json::Value>("getrawtransaction", &[json!(vin_txid), json!(1)])?;
     let input_out = &input_rawtx["vout"][vin_vout as usize];
-    let miner_input_address = if let Some(addr_str) = input_out["scriptPubKey"]["address"].as_str() {
+    let miner_input_address = if let Some(addr_str) = input_out["scriptPubKey"]["address"].as_str()
+    {
         addr_str.to_string()
     } else if let Some(addresses) = input_out["scriptPubKey"]["addresses"].as_array() {
         addresses[0].as_str().unwrap_or("").to_string()
