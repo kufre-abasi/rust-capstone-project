@@ -15,9 +15,9 @@ const RPC_PASS: &str = "password";
 // You can use calls not provided in RPC lib API using the generic `call` function.
 // An example of using the `send` RPC call, which doesn't have exposed API.
 // You can also use serde_json `Deserialize` derivation to capture the returned json result.
-fn send(rpc: &Client, addr: &str) -> bitcoincore_rpc::Result<String> {
+fn send(rpc: &Client, addr: &str, amount: f64) -> bitcoincore_rpc::Result<String> {
     let args = [
-        json!([{addr : 100 }]), // recipient address
+        json!([{addr : amount }]), // recipient address
         json!(null),            // conf target
         json!(null),            // estimate mode
         json!(null),            // fee rate in sats/vb
@@ -67,20 +67,29 @@ fn create_or_load_wallet(
 fn mine_until_spendable_balance(
     miner_rpc: &Client,
     mining_address: &Address
-) -> bitcoincore_rpc::Result<Amount>{
+) -> bitcoincore_rpc::Result<Amount>{    
     let mut blocks_mined = 0;
     let mut current_balance = Amount::from_sat(0);
 
 
-    while current_balance < 50_000_000_000 {
+    while current_balance <= Amount::from_sat(0) {
         blocks_mined += 1;
         miner_rpc.generate_to_address(1, mining_address)?;
 
-        current_balance = miner_rpc.get_balances()?;
+        current_balance = miner_rpc.get_balances(None, None)?;
 
         println!("Mined {} blocks, current balance: {}", blocks_mined, current_balance);
     }
-    
+   println!(
+        "Spendable balance reached after {} blocks!",
+        blocks_mined
+    );
+    println!("Mining completed. Final balance: {}", current_balance);
+    println!("Spendable balances: {}", current_balance.spendable);
+    println!("immature balances: {}", current_balance.immature);
+    println!("trusted balances: {}", current_balance.trusted);
+    println!("untrusted balances: {}", current_balance.untrusted);
+
     Ok(current_balance)
 }
 
@@ -115,6 +124,8 @@ fn main() -> bitcoincore_rpc::Result<()> {
     )?;
     println!("Mining Address: {}", mining_address);
 
+    let miner_balance = mine_until_spendable_balance(&miner_rpc, &mining_address)?;
+    println!("Miner Balance: {}", miner_balance);
 
 
 
@@ -125,17 +136,25 @@ fn main() -> bitcoincore_rpc::Result<()> {
         Auth::UserPass(RPC_USER.to_owned(), RPC_PASS.to_owned()),
     )?;
     let trader_address = trader_rpc.get_new_address(
-        Some("Received Trading Address"),
+        Some("Received"), 
         None, 
     )?;
     println!("Trader Address: {}", trader_address);
     
 
     // Send 20 BTC from Miner to Trader
-
+    let txid = send(&miner_rpc, &trader_address, 20.0)?;
+    println!("Transaction ID: {}", txid);
+    
+ 
     // Check transaction in mempool
+    let mempool_entry = rpc.call::<serde_json::Value>(
+        "getmempoolentry",
+        &[json!(txid)]
+    )?
+    println!("Mempool entry: {}", mempool_entry);
 
-    // Mine 1 block to confirm the transaction
+    // Mine 1 block to confirm the transaction 
 
     // Extract all required transaction details
 
