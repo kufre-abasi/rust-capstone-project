@@ -39,25 +39,36 @@ fn send(rpc: &Client, addr: &str, amount: f64) -> bitcoincore_rpc::Result<String
 }
 
 fn create_or_load_wallet(rpc: &Client, wallet_name: String) -> bitcoincore_rpc::Result<()> {
-    // rpc.create_wallet(&wallet_name, None, wallet_password.as_deref(), None, Some(false), Some(false), None)?;
-    // rpc.load_wallet(&wallet_name, None, wallet_password.as_deref(), None)
-    let result = rpc.call::<serde_json::Value>(
+    let loaded_wallets = rpc.call::<Vec<String>>("listwallets", &[])?;
+    if loaded_wallets.contains(&wallet_name) {
+        println!("Wallet '{}' is already loaded.", wallet_name);
+        return Ok(());
+    }
+
+    // Try loading first
+    let load_res = rpc.call::<serde_json::Value>("loadwallet", &[json!(wallet_name)]);
+    if load_res.is_ok() {
+        println!("Loaded wallet '{}'", wallet_name);
+        return Ok(());
+    }
+
+    // Create if load failed
+    let create_res = rpc.call::<serde_json::Value>(
         "createwallet",
         &[
             json!(wallet_name),
-            json!(false), // disable private
+            json!(false), // disable private keys = false
         ],
     );
-    match result {
+    match create_res {
         Ok(_) => {
-            println!("Wallet {} created.", wallet_name)
+            println!("Wallet {} created.", wallet_name);
         }
         Err(e) => {
-            println!("{:?}", e);
-            rpc.call::<serde_json::Value>("loadwallet", &[json!(wallet_name)])?;
-            println!("Loaded wallet '{}'", wallet_name);
+            println!("Failed to create/load wallet {}: {:?}", wallet_name, e);
+            return Err(e);
         }
-    };
+    }
     Ok(())
 }
 
@@ -151,16 +162,68 @@ fn main() -> bitcoincore_rpc::Result<()> {
     println!("Raw Transaction: {:#?}", rawtx);
 
     // Write the data to ../out.txt in the specified format given in readme.md
-    let transaction_data =
-        miner_rpc.call::<serde_json::Value>("gettransaction", &[json!(txid), json!(null)])?;
+    let txid_str = txid.clone();
 
-    let raw_transaction =
-        miner_rpc.call::<serde_json::Value>("getrawtransaction", &[json!(txid), json!(1)])?;
+    // Miner input UTXO details
+    let vin = &rawtx["vin"][0];
+    let vin_txid = vin["txid"].as_str().unwrap();
+    let vin_vout = vin["vout"].as_u64().unwrap();
+
+    let input_rawtx = miner_rpc.call::<serde_json::Value>(
+        "getrawtransaction",
+        &[json!(vin_txid), json!(1)]
+    )?;
+    let input_out = &input_rawtx["vout"][vin_vout as usize];
+    let miner_input_address = if let Some(addr_str) = input_out["scriptPubKey"]["address"].as_str() {
+        addr_str.to_string()
+    } else if let Some(addresses) = input_out["scriptPubKey"]["addresses"].as_array() {
+        addresses[0].as_str().unwrap_or("").to_string()
+    } else {
+        String::new()
+    };
+    let miner_input_amount = input_out["value"].as_f64().unwrap();
+
+    // Trader output and Miner change details
+    let vouts = rawtx["vout"].as_array().unwrap();
+    let mut trader_output_address = String::new();
+    let mut trader_output_amount = 0.0;
+    let mut miner_change_address = String::new();
+    let mut miner_change_amount = 0.0;
+
+    for vout in vouts {
+        let addr = if let Some(addr_str) = vout["scriptPubKey"]["address"].as_str() {
+            addr_str.to_string()
+        } else if let Some(addresses) = vout["scriptPubKey"]["addresses"].as_array() {
+            addresses[0].as_str().unwrap_or("").to_string()
+        } else {
+            String::new()
+        };
+        let val = vout["value"].as_f64().unwrap();
+        if addr == trader_address.to_string() {
+            trader_output_address = addr;
+            trader_output_amount = val;
+        } else {
+            miner_change_address = addr;
+            miner_change_amount = val;
+        }
+    }
+
+    let fee_val = tx["fee"].as_f64().unwrap();
+    let block_height = tx["blockheight"].as_i64().unwrap();
+    let block_hash = tx["blockhash"].as_str().unwrap();
 
     let output_file = File::create("../out.txt")?;
     let mut writer = std::io::BufWriter::new(output_file);
-    writeln!(writer, "Transaction Data: {:#?}", transaction_data)?;
-    writeln!(writer, "Raw Transaction: {:#?}", raw_transaction)?;
+    writeln!(writer, "{}", txid_str)?;
+    writeln!(writer, "{}", miner_input_address)?;
+    writeln!(writer, "{}", miner_input_amount)?;
+    writeln!(writer, "{}", trader_output_address)?;
+    writeln!(writer, "{}", trader_output_amount)?;
+    writeln!(writer, "{}", miner_change_address)?;
+    writeln!(writer, "{}", miner_change_amount)?;
+    writeln!(writer, "{}", fee_val)?;
+    writeln!(writer, "{}", block_height)?;
+    writeln!(writer, "{}", block_hash)?;
 
     Ok(())
 }
