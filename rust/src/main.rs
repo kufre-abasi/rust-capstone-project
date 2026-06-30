@@ -34,6 +34,37 @@ fn send(rpc: &Client, addr: &str) -> bitcoincore_rpc::Result<String> {
     Ok(send_result.txid)
 }
 
+fn create_or_load_wallet(
+    rpc: &Client,
+    wallet_name: String,
+ ) -> bitcoincore_rpc::Result<()> {
+    // rpc.create_wallet(&wallet_name, None, wallet_password.as_deref(), None, Some(false), Some(false), None)?;
+    // rpc.load_wallet(&wallet_name, None, wallet_password.as_deref(), None)
+    let result = rpc.call::<serde_json::Value>(
+        "createwallet",
+        &[
+            json!(wallet_name),
+            json!(false), // disable private
+        ]
+    );
+    match result{
+        Ok(_) => {
+            println!("Wallet {} created.", wallet_name)
+        } Err(e)=>{
+            println!("{:?}", e)
+        }
+    };
+
+    rpc.call::<serde_json::Value>(
+        "loadwallet",
+        &[
+            json!(wallet_name)
+        ],
+    );
+    Ok(())
+}
+
+
 fn main() -> bitcoincore_rpc::Result<()> {
     // Connect to Bitcoin Core RPC
     let rpc = Client::new(
@@ -46,6 +77,8 @@ fn main() -> bitcoincore_rpc::Result<()> {
     println!("Blockchain Info: {:?}", blockchain_info);
 
     // Create/Load the wallets, named 'Miner' and 'Trader'. Have logic to optionally create/load them if they do not exist or not loaded already.
+    create_or_load_wallet(&rpc, "miner".to_string())?;
+    create_or_load_wallet(&rpc, "trader".to_string())?;
 
     // Generate spendable balances in the Miner wallet. How many blocks needs to be mined?
 
