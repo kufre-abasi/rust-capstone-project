@@ -52,17 +52,39 @@ fn create_or_load_wallet(
             println!("Wallet {} created.", wallet_name)
         } Err(e)=>{
             println!("{:?}", e)
+             rpc.call::<serde_json::Value>(
+            "loadwallet",
+            &[
+                json!(wallet_name)
+            ],
+            );
+            println!("Loaded wallet '{}'", wallet_name);
         }
-    };
-
-    rpc.call::<serde_json::Value>(
-        "loadwallet",
-        &[
-            json!(wallet_name)
-        ],
-    );
+    };  
     Ok(())
 }
+
+fn mine_until_spendable_balance(
+    miner_rpc: &Client,
+    mining_address: &Address
+) -> bitcoincore_rpc::Result<Amount>{
+    let mut blocks_mined = 0;
+    let mut current_balance = Amount::from_sat(0);
+
+
+    while current_balance < 50_000_000_000 {
+        blocks_mined += 1;
+        miner_rpc.generate_to_address(1, mining_address)?;
+
+        current_balance = miner_rpc.get_balances()?;
+
+        println!("Mined {} blocks, current balance: {}", blocks_mined, current_balance);
+    }
+    
+    Ok(current_balance)
+}
+
+
 
 
 fn main() -> bitcoincore_rpc::Result<()> {
@@ -77,12 +99,37 @@ fn main() -> bitcoincore_rpc::Result<()> {
     println!("Blockchain Info: {:?}", blockchain_info);
 
     // Create/Load the wallets, named 'Miner' and 'Trader'. Have logic to optionally create/load them if they do not exist or not loaded already.
-    create_or_load_wallet(&rpc, "miner".to_string())?;
-    create_or_load_wallet(&rpc, "trader".to_string())?;
+    create_or_load_wallet(&rpc, "Miner".to_string())?;
+    create_or_load_wallet(&rpc, "Trader".to_string())?;
 
     // Generate spendable balances in the Miner wallet. How many blocks needs to be mined?
+    let miner_rpc = Client::new(
+        &format!("{}/wallet/Miner", RPC_URL),
+        Auth::UserPass(RPC_USER.to_owned(), RPC_PASS.to_owned()),  
+    )?;
+
+
+    let mining_address = miner_rpc.get_new_address(
+        Some("Mining Reward"), 
+        None,
+    )?;
+    println!("Mining Address: {}", mining_address);
+
+
+
 
     // Load Trader wallet and generate a new address
+
+    let trader_rpc = Client::new(
+        &format!("{}/wallet/Trader", RPC_URL),  
+        Auth::UserPass(RPC_USER.to_owned(), RPC_PASS.to_owned()),
+    )?;
+    let trader_address = trader_rpc.get_new_address(
+        Some("Received Trading Address"),
+        None, 
+    )?;
+    println!("Trader Address: {}", trader_address);
+    
 
     // Send 20 BTC from Miner to Trader
 
